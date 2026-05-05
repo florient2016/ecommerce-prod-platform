@@ -12,43 +12,6 @@ DOMAIN="itssolutions.it"
 echo "=== [1/10] Création des namespaces ==="
 oc apply -f gitops/namespaces.yaml
 
-echo "=== [2/10] Installation Tekton Pipelines ==="
-# Option A : OpenShift Pipelines Operator (recommandé on-premise)
-oc apply -f - <<EOF
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: openshift-pipelines-operator
-  namespace: openshift-operators
-spec:
-  channel: latest
-  name: openshift-pipelines-operator-rh
-  source: redhat-operators
-  sourceNamespace: openshift-marketplace
-EOF
-
-echo "Attente déploiement Tekton..."
-oc wait --for=condition=ready pod -l app=tekton-pipelines-controller -n tekton-pipelines --timeout=300s 2>/dev/null || \
-oc rollout status deployment/tekton-pipelines-controller -n tekton-pipelines --timeout=300s || true
-
-echo "=== [3/10] Installation Argo CD (OpenShift GitOps) ==="
-oc apply -f - <<EOF
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: openshift-gitops-operator
-  namespace: openshift-operators
-spec:
-  channel: latest
-  name: openshift-gitops-operator
-  source: redhat-operators
-  sourceNamespace: openshift-marketplace
-EOF
-
-echo "Attente déploiement Argo CD..."
-sleep 60
-oc wait --for=condition=available deployment/openshift-gitops-server -n openshift-gitops --timeout=300s || true
-
 echo "=== [4/10] Configuration Harbor - Certificat auto-signé ==="
 # Récupérer le certificat Harbor si auto-signé
 echo "Récupération certificat Harbor..."
