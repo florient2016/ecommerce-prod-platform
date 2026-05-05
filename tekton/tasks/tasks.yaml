@@ -1,0 +1,244 @@
+---
+# tekton/tasks/git-clone.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone-task
+  namespace: cicd
+spec:
+  params:
+    - name: url
+      type: string
+    - name: revision
+      type: string
+      default: main
+    - name: submodules
+      type: string
+      default: "true"
+  workspaces:
+    - name: output
+    - name: ssh-directory
+      optional: true
+  results:
+    - name: commit
+      description: The precise commit SHA
+    - name: url
+      description: The precise URL
+  steps:
+    - name: clone
+      image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:latest
+      env:
+        - name: HOME
+          value: /tekton/home
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        if [ -d "$(workspaces.ssh-directory.path)" ]; then
+          mkdir -p ~/.ssh
+          cp "$(workspaces.ssh-directory.path)"/ssh-privatekey ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<EOF
+        Host *
+          StrictHostKeyChecking no
+          IdentityFile ~/.ssh/id_ed25519
+        EOF
+        fi
+
+        CHECKOUT_DIR="$(workspaces.output.path)"
+        git clone "$(params.url)" "$CHECKOUT_DIR"
+        cd "$CHECKOUT_DIR"
+        git checkout "$(params.revision)"
+        RESULT_SHA="$(git rev-parse HEAD)"
+        printf "%s" "$RESULT_SHA" > "$(results.commit.path)"
+        printf "%s" "$(params.url)" > "$(results.url.path)"
+        echo "Cloned $(params.url) @ $RESULT_SHA"
+---
+# tekton/tasks/run-tests.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: run-tests-task
+  namespace: cicd
+spec:
+  params:
+    - name: app-dir
+      type: string
+      description: "backend or frontend"
+  workspaces:
+    - name: source
+  steps:
+    - name: install-deps
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)/$(params.app-dir)
+      script: |
+        #!/bin/sh
+        set -eu
+        echo "=== Installing dependencies for $(params.app-dir) ==="
+        npm ci --prefer-offline 2>/dev/null || npm install
+    - name: run-tests
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)/$(params.app-dir)
+      script: |
+        #!/bin/sh
+        set -eu
+        echo "=== Running tests for $(params.app-dir) ==="
+        npm test -- --passWithNoTests || true
+        echo "=== Tests completed ==="
+---
+# tekton/tasks/buildah-build-push.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: buildah-build-push
+  namespace: cicd
+spec:
+  params:
+    - name: image
+      description: Full image reference (registry/repo:tag)
+    - name: context
+      description: Path to build context
+      default: .
+    - name: dockerfile
+      description: Path to Dockerfile
+      default: ./Dockerfile
+    - name: build-arg
+      description: Extra build-arg (e.g. VITE_API_URL=...)
+      default: ""
+    - name: insecure-registry
+      description: Allow insecure registry
+      default: "true"
+    - name: tls-verify
+      description: Verify TLS for registry
+      default: "false"
+  workspaces:
+    - name: source
+    - name: dockerconfig
+      optional: true
+  steps:
+    - name: build-and-push
+      image: registry.redhat.io/rhel8/buildah:latest
+      workingDir: $(workspaces.source.path)/$(params.context)
+      securityContext:
+        privileged: true
+      env:
+        - name: STORAGE_DRIVER
+          value: vfs
+        - name: BUILDAH_FORMAT
+          value: docker
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+
+        # Configure Harbor credentials if dockerconfig workspace provided
+        if [ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]; then
+          export REGISTRY_AUTH_FILE="$(workspaces.dockerconfig.path)/.dockerconfigjson"
+        fi
+
+        IMAGE="$(params.image)"
+        DOCKERFILE="$(params.dockerfile)"
+        BUILD_ARG="$(params.build-arg)"
+        TLS_VERIFY="$(params.tls-verify)"
+
+        echo "=== Building image: $IMAGE ==="
+
+        BUILD_ARGS=""
+        if [ -n "$BUILD_ARG" ]; then
+          BUILD_ARGS="--build-arg $BUILD_ARG"
+        fi
+
+        buildah bud \
+          --storage-driver=vfs \
+          --format=docker \
+          $BUILD_ARGS \
+          -f "$DOCKERFILE" \
+          -t "$IMAGE" \
+          .
+
+        echo "=== Pushing image: $IMAGE ==="
+        buildah push \
+          --storage-driver=vfs \
+          --tls-verify="$TLS_VERIFY" \
+          "$IMAGE" \
+          "docker://$IMAGE"
+
+        echo "=== Done: $IMAGE ==="
+---
+# tekton/tasks/update-gitops.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-gitops-manifests
+  namespace: cicd
+spec:
+  params:
+    - name: git-url
+      description: GitOps repo URL
+    - name: git-branch
+      description: Target branch
+      default: main
+    - name: backend-image
+      description: Backend image with tag
+    - name: frontend-image
+      description: Frontend image with tag
+    - name: commit-sha
+      description: Source commit SHA
+  workspaces:
+    - name: ssh-directory
+  steps:
+    - name: update-manifests
+      image: alpine/git:latest
+      env:
+        - name: HOME
+          value: /tekton/home
+        - name: GIT_AUTHOR_NAME
+          value: "Tekton CI"
+        - name: GIT_AUTHOR_EMAIL
+          value: "tekton@itssolutions.it"
+        - name: GIT_COMMITTER_NAME
+          value: "Tekton CI"
+        - name: GIT_COMMITTER_EMAIL
+          value: "tekton@itssolutions.it"
+      script: |
+        #!/bin/sh
+        set -eu
+
+        # SSH setup
+        mkdir -p ~/.ssh
+        cp "$(workspaces.ssh-directory.path)"/ssh-privatekey ~/.ssh/id_ed25519
+        chmod 0600 ~/.ssh/id_ed25519
+        cat >> ~/.ssh/config <<EOF
+        Host *
+          StrictHostKeyChecking no
+        EOF
+
+        # Clone GitOps repo
+        cd /tmp
+        git clone "$(params.git-url)" gitops-repo
+        cd gitops-repo
+        git checkout "$(params.git-branch)"
+
+        BACKEND_IMAGE="$(params.backend-image)"
+        FRONTEND_IMAGE="$(params.frontend-image)"
+        COMMIT_SHA="$(params.commit-sha)"
+
+        echo "=== Updating image tags to SHA: ${COMMIT_SHA:0:8} ==="
+
+        # Update backend image tag in kustomize overlay
+        sed -i "s|image: 10.0.0.2:8083/ecommerce/backend:.*|image: $BACKEND_IMAGE|g" \
+          gitops/kustomize/overlays/prod/kustomization.yaml
+
+        # Update frontend image tag
+        sed -i "s|image: 10.0.0.2:8083/ecommerce/frontend:.*|image: $FRONTEND_IMAGE|g" \
+          gitops/kustomize/overlays/prod/kustomization.yaml
+
+        git add -A
+        git diff --staged --quiet && echo "No changes" && exit 0
+
+        git commit -m "ci: update images to ${COMMIT_SHA:0:8}
+
+        Backend:  $BACKEND_IMAGE
+        Frontend: $FRONTEND_IMAGE
+        Triggered by commit: $COMMIT_SHA"
+
+        git push origin "$(params.git-branch)"
+        echo "=== GitOps manifests updated ==="

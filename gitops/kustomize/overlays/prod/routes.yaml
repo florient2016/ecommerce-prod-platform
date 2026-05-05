@@ -1,0 +1,60 @@
+---
+# gitops/kustomize/overlays/prod/routes.yaml
+
+# Route Frontend HTTPS avec TLS edge
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend
+  namespace: ecommerce-prod
+  labels:
+    app: frontend
+    environment: production
+  annotations:
+    haproxy.router.openshift.io/timeout: 30s
+    haproxy.router.openshift.io/hsts_header: max-age=31536000;includeSubDomains;preload
+spec:
+  host: frontend.itssolutions.it
+  to:
+    kind: Service
+    name: frontend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+    # Pour certificat auto-signé, ajouter :
+    # certificate: |
+    #   -----BEGIN CERTIFICATE-----
+    #   ...
+    # key: |
+    #   -----BEGIN RSA PRIVATE KEY-----
+    #   ...
+    # caCertificate: |
+    #   -----BEGIN CERTIFICATE-----
+    #   ...
+---
+# Route API Backend HTTPS
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-api
+  namespace: ecommerce-prod
+  labels:
+    app: backend
+    environment: production
+  annotations:
+    haproxy.router.openshift.io/timeout: 60s
+    haproxy.router.openshift.io/balance: roundrobin
+spec:
+  host: api.itssolutions.it
+  to:
+    kind: Service
+    name: backend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

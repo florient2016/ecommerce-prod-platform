@@ -1,0 +1,100 @@
+---
+# tekton/rbac.yaml
+# Pipeline SA - accès ressources Tekton dans cicd
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-pipeline-role
+  namespace: cicd
+rules:
+  - apiGroups: ["tekton.dev"]
+    resources: ["tasks", "taskruns", "pipelines", "pipelineruns"]
+    verbs: ["get", "list", "create", "update", "patch", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "secrets", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "update", "patch", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-pipeline-rolebinding
+  namespace: cicd
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pipeline-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-pipeline-role
+---
+# Triggers SA - accès EventListener
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-triggers-role
+  namespace: cicd
+rules:
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners", "triggerbindings", "triggertemplates", "triggers", "clusterinterceptors"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "pipelinerunsources"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-triggers-rolebinding
+  namespace: cicd
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-triggers-role
+---
+# Accès inter-namespace : cicd -> ecommerce-prod (pour update manifests)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tekton-gitops-updater
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-gitops-updater-binding
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pipeline-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-gitops-updater
+---
+# SCC permissive pour buildah (besoin privileges)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-pipeline-privileged
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pipeline-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged

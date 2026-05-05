@@ -1,0 +1,99 @@
+---
+# gitops/argocd/project.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ecommerce
+  namespace: openshift-gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "E-Commerce Production Platform"
+  sourceRepos:
+    - '*'
+  destinations:
+    - namespace: ecommerce-prod
+      server: https://kubernetes.default.svc
+    - namespace: ecommerce-dev
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'route.openshift.io'
+      kind: Route
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  roles:
+    - name: ci-role
+      description: CI system can sync
+      policies:
+        - p, proj:ecommerce:ci-role, applications, sync, ecommerce/*, allow
+        - p, proj:ecommerce:ci-role, applications, get, ecommerce/*, allow
+---
+# gitops/argocd/application-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-prod
+  namespace: openshift-gitops
+  labels:
+    environment: prod
+    app: ecommerce
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/YOUR_ORG/ecommerce-production-platform.git
+    targetRevision: main
+    path: gitops/kustomize/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+---
+# gitops/argocd/application-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-dev
+  namespace: openshift-gitops
+  labels:
+    environment: dev
+    app: ecommerce
+spec:
+  project: ecommerce
+  source:
+    repoURL: https://github.com/YOUR_ORG/ecommerce-production-platform.git
+    targetRevision: develop
+    path: gitops/kustomize/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

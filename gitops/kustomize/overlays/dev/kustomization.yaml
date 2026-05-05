@@ -1,0 +1,53 @@
+---
+# gitops/kustomize/overlays/dev/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ecommerce-dev
+
+bases:
+  - ../../base
+
+resources:
+  - routes-dev.yaml
+
+images:
+  - name: 10.0.0.2:8083/ecommerce/backend
+    newTag: develop
+  - name: 10.0.0.2:8083/ecommerce/frontend
+    newTag: develop
+
+patches:
+  # Dev: 1 réplique seulement
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  # Dev: resources réduites
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: "5Gi"
+
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      - NODE_ENV=development
+      - CORS_ORIGIN=https://frontend-dev.itssolutions.it
+
+commonLabels:
+  environment: development

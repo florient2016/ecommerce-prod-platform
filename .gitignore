@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Secrets (JAMAIS commiter)
+*.pem
+*.key
+*.p12
+*-secret-values.yaml
+sealed-*.yaml
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+prisma/migrations/dev.db
+
+# Test coverage
+coverage/
+
+# Tekton temp
+/tmp/
+
+# Backup files
+*.dump
+*.backup

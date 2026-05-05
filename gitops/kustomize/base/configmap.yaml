@@ -1,0 +1,20 @@
+---
+# gitops/kustomize/base/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+data:
+  POSTGRES_DB: ecommerce_prod
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  NODE_ENV: production
+  PORT: "3000"
+  CORS_ORIGIN: "https://frontend.itssolutions.it"
+  LOG_LEVEL: info

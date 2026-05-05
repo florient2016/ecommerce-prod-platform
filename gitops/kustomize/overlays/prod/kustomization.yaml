@@ -1,0 +1,52 @@
+---
+# gitops/kustomize/overlays/prod/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ecommerce-prod
+
+bases:
+  - ../../base
+
+resources:
+  - routes.yaml
+  - secrets-template.yaml
+  - resourcequota.yaml
+
+# Images - mises à jour par Tekton (via sed dans update-gitops task)
+images:
+  - name: 10.0.0.2:8083/ecommerce/backend
+    newTag: latest
+  - name: 10.0.0.2:8083/ecommerce/frontend
+    newTag: latest
+
+patches:
+  # Backend prod : 2 replicas min, resources augmentées
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+
+  # PostgreSQL prod : storage plus grande
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: "50Gi"
+
+commonLabels:
+  environment: production
+
+commonAnnotations:
+  deployment.kubernetes.io/environment: production

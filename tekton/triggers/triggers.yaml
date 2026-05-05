@@ -1,0 +1,146 @@
+---
+# tekton/triggers/trigger-binding.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: ecommerce-trigger-binding
+  namespace: cicd
+spec:
+  params:
+    - name: git-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: $(body.after)
+    - name: git-branch
+      value: $(body.ref)
+---
+# tekton/triggers/trigger-template.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: ecommerce-trigger-template
+  namespace: cicd
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+      default: main
+    - name: git-branch
+      default: refs/heads/main
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: ecommerce-pipeline-run-
+        namespace: cicd
+        labels:
+          tekton.dev/pipeline: ecommerce-pipeline
+      spec:
+        serviceAccountName: tekton-pipeline-sa
+        pipelineRef:
+          name: ecommerce-pipeline
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+          - name: gitops-url
+            value: git@github.com:YOUR_ORG/ecommerce-production-platform.git
+          - name: harbor-host
+            value: 10.0.0.2:8083
+          - name: image-prefix
+            value: ecommerce
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 2Gi
+          - name: dockerconfig-workspace
+            secret:
+              secretName: harbor-push-secret
+          - name: ssh-workspace
+            secret:
+              secretName: git-ssh-secret
+        timeouts:
+          pipeline: 45m
+---
+# tekton/triggers/event-listener.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: ecommerce-event-listener
+  namespace: cicd
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: github-push-main
+      interceptors:
+        # Valider le HMAC secret du webhook GitHub/GitLab
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: webhook-secret
+                secretKey: secret
+            - name: eventTypes
+              value: [push]
+        # Filtre : seulement la branche main
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: "body.ref == 'refs/heads/main'"
+      bindings:
+        - ref: ecommerce-trigger-binding
+      template:
+        ref: ecommerce-trigger-template
+
+    - name: gitlab-push-main
+      interceptors:
+        - ref:
+            name: gitlab
+          params:
+            - name: secretRef
+              value:
+                secretName: webhook-secret
+                secretKey: secret
+            - name: eventTypes
+              value: [Push Hook]
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: "body.ref == 'refs/heads/main'"
+      bindings:
+        - name: git-url
+          value: $(body.project.http_url)
+        - name: git-revision
+          value: $(body.checkout_sha)
+        - name: git-branch
+          value: $(body.ref)
+      template:
+        ref: ecommerce-trigger-template
+---
+# Route OpenShift pour exposer l'EventListener au webhook externe
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ecommerce-webhook
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ecommerce-cicd
+spec:
+  host: webhook.itssolutions.it
+  to:
+    kind: Service
+    name: el-ecommerce-event-listener
+  port:
+    targetPort: http-listener
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

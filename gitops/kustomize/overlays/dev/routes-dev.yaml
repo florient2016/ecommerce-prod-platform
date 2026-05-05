@@ -1,0 +1,33 @@
+---
+# gitops/kustomize/overlays/dev/routes-dev.yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend-dev
+  namespace: ecommerce-dev
+spec:
+  host: frontend-dev.itssolutions.it
+  to:
+    kind: Service
+    name: frontend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: backend-api-dev
+  namespace: ecommerce-dev
+spec:
+  host: api-dev.itssolutions.it
+  to:
+    kind: Service
+    name: backend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

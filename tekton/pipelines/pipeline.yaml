@@ -1,0 +1,176 @@
+---
+# tekton/pipelines/pipeline.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: ecommerce-pipeline
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ecommerce-cicd
+spec:
+  params:
+    - name: git-url
+      type: string
+      description: Source repository URL
+    - name: git-revision
+      type: string
+      default: main
+    - name: gitops-url
+      type: string
+      description: GitOps repository URL
+    - name: harbor-host
+      type: string
+      default: 10.0.0.2:8083
+    - name: image-prefix
+      type: string
+      default: ecommerce
+
+  workspaces:
+    - name: shared-workspace
+      description: Shared workspace for source code
+    - name: dockerconfig-workspace
+      description: Docker config for Harbor push
+    - name: ssh-workspace
+      description: SSH key for git operations
+
+  results:
+    - name: commit-sha
+      value: $(tasks.clone-source.results.commit)
+    - name: backend-image
+      value: $(tasks.set-image-tags.results.backend-image)
+    - name: frontend-image
+      value: $(tasks.set-image-tags.results.frontend-image)
+
+  tasks:
+    # ─── 1. Clone source code ───────────────────────────
+    - name: clone-source
+      taskRef:
+        name: git-clone-task
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+        - name: ssh-directory
+          workspace: ssh-workspace
+
+    # ─── 2. Set image tags based on commit SHA ───────────
+    - name: set-image-tags
+      taskSpec:
+        params:
+          - name: commit-sha
+          - name: harbor-host
+          - name: image-prefix
+        results:
+          - name: backend-image
+          - name: frontend-image
+          - name: short-sha
+        steps:
+          - name: set-tags
+            image: alpine
+            script: |
+              #!/bin/sh
+              SHA="$(params.commit-sha)"
+              SHORT="${SHA:0:8}"
+              HARBOR="$(params.harbor-host)"
+              PREFIX="$(params.image-prefix)"
+              echo -n "${HARBOR}/${PREFIX}/backend:${SHORT}" | tee $(results.backend-image.path)
+              echo -n "${HARBOR}/${PREFIX}/frontend:${SHORT}" | tee $(results.frontend-image.path)
+              echo -n "${SHORT}" | tee $(results.short-sha.path)
+      params:
+        - name: commit-sha
+          value: $(tasks.clone-source.results.commit)
+        - name: harbor-host
+          value: $(params.harbor-host)
+        - name: image-prefix
+          value: $(params.image-prefix)
+      runAfter: [clone-source]
+
+    # ─── 3. Test backend ─────────────────────────────────
+    - name: test-backend
+      taskRef:
+        name: run-tests-task
+      params:
+        - name: app-dir
+          value: backend
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      runAfter: [clone-source]
+
+    # ─── 4. Test frontend ────────────────────────────────
+    - name: test-frontend
+      taskRef:
+        name: run-tests-task
+      params:
+        - name: app-dir
+          value: frontend
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      runAfter: [clone-source]
+
+    # ─── 5. Build & Push Backend ─────────────────────────
+    - name: build-backend
+      taskRef:
+        name: buildah-build-push
+      params:
+        - name: image
+          value: $(tasks.set-image-tags.results.backend-image)
+        - name: context
+          value: backend
+        - name: dockerfile
+          value: ./Dockerfile
+        - name: tls-verify
+          value: "false"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: dockerconfig-workspace
+      runAfter: [test-backend, set-image-tags]
+
+    # ─── 6. Build & Push Frontend ────────────────────────
+    - name: build-frontend
+      taskRef:
+        name: buildah-build-push
+      params:
+        - name: image
+          value: $(tasks.set-image-tags.results.frontend-image)
+        - name: context
+          value: frontend
+        - name: dockerfile
+          value: ./Dockerfile
+        - name: build-arg
+          value: "VITE_API_URL=https://api.itssolutions.it"
+        - name: tls-verify
+          value: "false"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: dockerconfig-workspace
+      runAfter: [test-frontend, set-image-tags]
+
+    # ─── 7. Update GitOps manifests ──────────────────────
+    - name: update-gitops
+      taskRef:
+        name: update-gitops-manifests
+      params:
+        - name: git-url
+          value: $(params.gitops-url)
+        - name: git-branch
+          value: main
+        - name: backend-image
+          value: $(tasks.set-image-tags.results.backend-image)
+        - name: frontend-image
+          value: $(tasks.set-image-tags.results.frontend-image)
+        - name: commit-sha
+          value: $(tasks.clone-source.results.commit)
+      workspaces:
+        - name: ssh-directory
+          workspace: ssh-workspace
+      runAfter: [build-backend, build-frontend]
