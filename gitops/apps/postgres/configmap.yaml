@@ -1,0 +1,14 @@
+---
+# gitops/apps/postgres/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: ecommerce-prod
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: ecommerce
+data:
+  POSTGRES_DB: ecommerce_prod
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"

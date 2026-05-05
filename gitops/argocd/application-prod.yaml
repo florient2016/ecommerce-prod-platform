@@ -1,0 +1,42 @@
+---
+# gitops/argocd/application-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecommerce-prod
+  namespace: openshift-gitops
+  labels:
+    environment: prod
+    app: ecommerce
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecommerce
+  source:
+    repoURL: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+    targetRevision: main
+    path: gitops/kustomize/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecommerce-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

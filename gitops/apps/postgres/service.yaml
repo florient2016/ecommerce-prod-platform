@@ -1,0 +1,21 @@
+---
+# gitops/apps/postgres/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: ecommerce-prod
+  labels:
+    app: postgres
+    tier: database
+    app.kubernetes.io/part-of: ecommerce
+spec:
+  type: ClusterIP
+  clusterIP: None   # Headless — requis pour StatefulSet
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+      protocol: TCP
+  selector:
+    app: postgres

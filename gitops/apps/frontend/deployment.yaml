@@ -1,0 +1,114 @@
+---
+# gitops/apps/frontend/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ecommerce-prod
+  labels:
+    app: frontend
+    tier: web
+    app.kubernetes.io/part-of: ecommerce
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: frontend
+        tier: web
+    spec:
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: harbor-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: frontend
+          image: 10.0.0.2:8083/ecommerce/frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+---
+# gitops/apps/frontend/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: ecommerce-prod
+  labels:
+    app: frontend
+    tier: web
+    app.kubernetes.io/part-of: ecommerce
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+      protocol: TCP
+  selector:
+    app: frontend
+---
+# gitops/apps/frontend/route.yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend
+  namespace: ecommerce-prod
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: ecommerce
+  annotations:
+    haproxy.router.openshift.io/timeout: 30s
+    haproxy.router.openshift.io/hsts_header: max-age=31536000;includeSubDomains;preload
+spec:
+  host: frontend.itssolutions.it
+  to:
+    kind: Service
+    name: frontend
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

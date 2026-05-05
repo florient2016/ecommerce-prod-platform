@@ -8,9 +8,9 @@ metadata:
 spec:
   params:
     - name: git-url
-      value: $(body.repository.clone_url)
+      value: $(body.project.http_url)
     - name: git-revision
-      value: $(body.after)
+      value: $(body.checkout_sha)
     - name: git-branch
       value: $(body.ref)
 ---
@@ -23,6 +23,7 @@ metadata:
 spec:
   params:
     - name: git-url
+      default: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
     - name: git-revision
       default: main
     - name: git-branch
@@ -46,7 +47,9 @@ spec:
           - name: git-revision
             value: $(tt.params.git-revision)
           - name: gitops-url
-            value: git@github.com:YOUR_ORG/ecommerce-production-platform.git
+            # URL SSH de ton GitLab on-premise
+            # Format : ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+            value: ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
           - name: harbor-host
             value: 10.0.0.2:8083
           - name: image-prefix
@@ -77,19 +80,21 @@ metadata:
 spec:
   serviceAccountName: tekton-triggers-sa
   triggers:
-    - name: github-push-main
+    # GitLab on-premise 10.0.0.2:8929 — Push sur main
+    - name: gitlab-push-main
       interceptors:
-        # Valider le HMAC secret du webhook GitHub/GitLab
+        # Valider le token secret du webhook GitLab
         - ref:
-            name: github
+            name: gitlab
           params:
             - name: secretRef
               value:
                 secretName: webhook-secret
                 secretKey: secret
             - name: eventTypes
-              value: [push]
-        # Filtre : seulement la branche main
+              value:
+                - Push Hook
+        # Filtrer : seulement la branche main
         - ref:
             name: cel
           params:
@@ -99,34 +104,8 @@ spec:
         - ref: ecommerce-trigger-binding
       template:
         ref: ecommerce-trigger-template
-
-    - name: gitlab-push-main
-      interceptors:
-        - ref:
-            name: gitlab
-          params:
-            - name: secretRef
-              value:
-                secretName: webhook-secret
-                secretKey: secret
-            - name: eventTypes
-              value: [Push Hook]
-        - ref:
-            name: cel
-          params:
-            - name: filter
-              value: "body.ref == 'refs/heads/main'"
-      bindings:
-        - name: git-url
-          value: $(body.project.http_url)
-        - name: git-revision
-          value: $(body.checkout_sha)
-        - name: git-branch
-          value: $(body.ref)
-      template:
-        ref: ecommerce-trigger-template
 ---
-# Route OpenShift pour exposer l'EventListener au webhook externe
+# Route OpenShift pour exposer l'EventListener au webhook GitLab
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
