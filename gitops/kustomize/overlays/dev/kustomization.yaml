@@ -41,6 +41,12 @@ patches:
       - op: replace
         path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
         value: "5Gi"
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: "nfs-storage"
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/accessModes
+        value: ["ReadWriteMany"]
 
 configMapGenerator:
   - name: backend-config

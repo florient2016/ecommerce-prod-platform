@@ -1,5 +1,10 @@
 ---
 # gitops/kustomize/base/postgres-statefulset.yaml
+#
+# IMPORTANT OpenShift SCC :
+# Ne pas fixer runAsUser ni fsGroup — OpenShift assigne automatiquement
+# un UID valide dans la plage du namespace (ex: 1000870000).
+#
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -20,10 +25,6 @@ spec:
         tier: database
     spec:
       terminationGracePeriodSeconds: 60
-      securityContext:
-        fsGroup: 999
-        runAsUser: 999
-        runAsNonRoot: true
       containers:
         - name: postgres
           image: postgres:16-alpine
@@ -32,10 +33,7 @@ spec:
               name: postgres
           env:
             - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: postgres-config
-                  key: POSTGRES_DB
+              value: ecommerce_prod
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -60,38 +58,31 @@ spec:
               mountPath: /var/lib/postgresql/data
           livenessProbe:
             exec:
-              command:
-                - /bin/sh
-                - -c
-                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+              command: ["/bin/sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             exec:
-              command:
-                - /bin/sh
-                - -c
-                - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB
+              command: ["/bin/sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
       spec:
-        accessModes: [ReadWriteOnce]
+        accessModes: [ReadWriteMany]
+        storageClassName: nfs-storage
         resources:
           requests:
             storage: 20Gi
-        # storageClassName: standard  # Adapter selon le cluster
 ---
-# Service PostgreSQL (dans le même fichier)
+# Service headless pour StatefulSet
 apiVersion: v1
 kind: Service
 metadata:
@@ -101,10 +92,11 @@ metadata:
     tier: database
 spec:
   type: ClusterIP
-  clusterIP: None   # Headless pour StatefulSet
+  clusterIP: None
   ports:
     - port: 5432
       targetPort: 5432
       name: postgres
+      protocol: TCP
   selector:
     app: postgres

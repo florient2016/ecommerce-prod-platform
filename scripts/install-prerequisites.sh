@@ -32,49 +32,48 @@ oc apply -f gitops/namespaces.yaml
 ok "Namespaces : ecommerce-prod, ecommerce-dev, cicd"
 
 # ─── 2. TEKTON PIPELINES ─────────────────────────────────────────────────────
-#step "[2/10] Installation OpenShift Pipelines (Tekton)..."
-#oc apply -f - <<EOF
-#apiVersion: operators.coreos.com/v1alpha1
-#kind: Subscription
-#metadata:
-#  name: openshift-pipelines-operator
-#  namespace: openshift-operators
-#spec:
-#  channel: latest
-#  name: openshift-pipelines-operator-rh
-#  source: redhat-operators
-#  sourceNamespace: openshift-marketplace
-#EOF
+step "[2/10] Installation OpenShift Pipelines (Tekton)..."
+oc apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-pipelines-operator
+  namespace: openshift-operators
+spec:
+  channel: latest
+  name: openshift-pipelines-operator-rh
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
 
-#echo "    ⏳ Attente déploiement Tekton (max 5 min)..."
-#sleep 30
-#oc wait --for=condition=available deployment/tekton-pipelines-controller \
-#  -n tekton-pipelines --timeout=300s 2>/dev/null && \
-#  ok "Tekton Pipelines opérationnel" || \
-#  warn "Tekton Pipelines en cours d'installation — continuer"
+echo "    ⏳ Attente déploiement Tekton (max 5 min)..."
+sleep 30
+oc wait --for=condition=available deployment/tekton-pipelines-controller \
+  -n tekton-pipelines --timeout=300s 2>/dev/null && \
+  ok "Tekton Pipelines opérationnel" || \
+  warn "Tekton Pipelines en cours d'installation — continuer"
 
 # ─── 3. ARGO CD ──────────────────────────────────────────────────────────────
-#step "[3/10] Installation OpenShift GitOps (Argo CD)..."
-#oc apply -f - <<EOF
-#apiVersion: operators.coreos.com/v1alpha1
-#kind: Subscription
-#metadata:
-#  name: openshift-gitops-operator
-#  namespace: openshift-operators
-#spec:
-#  channel: latest
-#  name: openshift-gitops-operator
-#  source: redhat-operators
-#  sourceNamespace: openshift-marketplace
-#EOF
+step "[3/10] Installation OpenShift GitOps (Argo CD)..."
+oc apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-gitops-operator
+  namespace: openshift-operators
+spec:
+  channel: latest
+  name: openshift-gitops-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
 
-#echo "    ⏳ Attente déploiement Argo CD (max 5 min)..."
-#sleep 60
-#oc wait --for=condition=available deployment/openshift-gitops-server \
-#  -n openshift-gitops --timeout=300s 2>/dev/null && \
-#  ok "Argo CD opérationnel" || \
-#  warn "Argo CD en cours d'installation — continuer"
-
+echo "    ⏳ Attente déploiement Argo CD (max 5 min)..."
+sleep 60
+oc wait --for=condition=available deployment/openshift-gitops-server \
+  -n openshift-gitops --timeout=300s 2>/dev/null && \
+  ok "Argo CD opérationnel" || \
+  warn "Argo CD en cours d'installation — continuer"
 
 # ─── 4. HARBOR REGISTRY INSECURE ─────────────────────────────────────────────
 step "[4/10] Configuration Harbor comme registry insecure..."
@@ -87,14 +86,14 @@ oc patch image.config.openshift.io/cluster --type=merge -p "{
 }"
 ok "Harbor ${HARBOR_HOST} ajouté comme registry insecure"
 
-#if oc get mcp/worker &>/dev/null 2>&1; then
-#  warn "MachineConfigPool détecté — attente nœuds (peut prendre 5 min)..."
-#  sleep 30
-#  oc wait mcp/worker --for=condition=Updated --timeout=600s && \
-#    ok "Nœuds mis à jour" || warn "Timeout MachineConfigPool — continuer"
-#else
-#  ok "Pas de MachineConfigPool worker (SNO) — continuer"
-#fi
+if oc get mcp/worker &>/dev/null 2>&1; then
+  warn "MachineConfigPool détecté — attente nœuds (peut prendre 5 min)..."
+  sleep 30
+  oc wait mcp/worker --for=condition=Updated --timeout=600s && \
+    ok "Nœuds mis à jour" || warn "Timeout MachineConfigPool — continuer"
+else
+  ok "Pas de MachineConfigPool worker (SNO) — continuer"
+fi
 
 # ─── 5. SECRETS HARBOR ───────────────────────────────────────────────────────
 step "[5/10] Création des secrets Harbor..."

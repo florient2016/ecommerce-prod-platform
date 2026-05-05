@@ -233,7 +233,8 @@ spec:
     - name: shared-workspace
       volumeClaimTemplate:
         spec:
-          accessModes: [ReadWriteOnce]
+          accessModes: [ReadWriteMany]
+          storageClassName: nfs-storage
           resources:
             requests:
               storage: 2Gi

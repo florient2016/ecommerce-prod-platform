@@ -1,5 +1,11 @@
 ---
 # gitops/apps/postgres/statefulset.yaml
+#
+# IMPORTANT OpenShift SCC :
+# - Ne pas fixer runAsUser ni fsGroup
+# - OpenShift assigne automatiquement un UID dans la plage autorisée
+# - L'image postgres:16-alpine s'adapte via PGDATA dans un dossier writable
+#
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -22,10 +28,11 @@ spec:
         tier: database
     spec:
       terminationGracePeriodSeconds: 60
-      securityContext:
-        fsGroup: 999
-        runAsUser: 999
-        runAsNonRoot: true
+      # ─── OpenShift : NE PAS fixer runAsUser / fsGroup ───────────────────
+      # OpenShift injecte automatiquement un UID valide (ex: 1000870000)
+      # dans la plage autorisée du namespace.
+      # L'image postgres accepte n'importe quel UID via PGDATA.
+      # ────────────────────────────────────────────────────────────────────
       containers:
         - name: postgres
           image: postgres:16-alpine
@@ -77,14 +84,17 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+          # ─── SecurityContext minimal compatible OpenShift SCC ──────────
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            # Pas de runAsUser fixe — OpenShift l'assigne automatiquement
+            # Pas de readOnlyRootFilesystem — postgres écrit dans /tmp et /var
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
       spec:
-        accessModes: [ReadWriteOnce]
+        accessModes: [ReadWriteMany]
+        storageClassName: nfs-storage
         resources:
           requests:
             storage: 20Gi
