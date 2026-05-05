@@ -6,7 +6,7 @@
 #
 # Usage :
 #   export HARBOR_PASSWORD='mon_token_harbor'
-#   export GITOPS_REPO='ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git'
+#   export GITOPS_REPO='ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git'
 #   ./scripts/deploy-production.sh
 #
 # Variables optionnelles :
@@ -42,7 +42,7 @@ fi
 
 if [ -z "${GITOPS_REPO:-}" ]; then
   echo -e "${RED}ERREUR${NC} : GITOPS_REPO non défini."
-  echo "  export GITOPS_REPO='ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git'"
+  echo "  export GITOPS_REPO='ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git'"
   exit 1
 fi
 
@@ -272,8 +272,8 @@ ok "Backend  : https://${BACKEND_ROUTE}"
 # ─── 9. ARGO CD ──────────────────────────────────────────────────────────────
 step "[9/10] Configuration Argo CD..."
 
-sed "s|http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git|${GITOPS_REPO}|g;
-     s|ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git|${GITOPS_REPO}|g" \
+sed "s|ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git|${GITOPS_REPO}|g;
+     s|ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git|${GITOPS_REPO}|g" \
   gitops/argocd/applications.yaml | oc apply -f -
 
 ARGOCD_HOST=$(oc get route openshift-gitops-server -n openshift-gitops \

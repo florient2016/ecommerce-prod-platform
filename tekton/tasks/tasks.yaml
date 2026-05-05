@@ -1,5 +1,4 @@
 ---
-# tekton/tasks/git-clone.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -12,9 +11,12 @@ spec:
     - name: revision
       type: string
       default: main
-    - name: submodules
+    - name: git-ssh-host
       type: string
-      default: "true"
+      default: gitlab.itssolutions.it
+    - name: git-ssh-port
+      type: string
+      default: "2424"
   workspaces:
     - name: output
     - name: ssh-directory
@@ -33,11 +35,16 @@ spec:
       script: |
         #!/usr/bin/env sh
         set -eu
-        if [ -d "$(workspaces.ssh-directory.path)" ]; then
+
+        if [ -d "$(workspaces.ssh-directory.path)" ] && [ -f "$(workspaces.ssh-directory.path)/ssh-privatekey" ]; then
           mkdir -p ~/.ssh
           cp "$(workspaces.ssh-directory.path)"/ssh-privatekey ~/.ssh/id_ed25519
           chmod 0600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<EOF
+          cat > ~/.ssh/config <<EOF
+        Host $(params.git-ssh-host)
+          Port $(params.git-ssh-port)
+          StrictHostKeyChecking no
+          IdentityFile ~/.ssh/id_ed25519
         Host *
           StrictHostKeyChecking no
           IdentityFile ~/.ssh/id_ed25519
@@ -45,6 +52,7 @@ spec:
         fi
 
         CHECKOUT_DIR="$(workspaces.output.path)"
+        rm -rf "${CHECKOUT_DIR:?}"/* "${CHECKOUT_DIR}"/.[!.]* "${CHECKOUT_DIR}"/..?* 2>/dev/null || true
         git clone "$(params.url)" "$CHECKOUT_DIR"
         cd "$CHECKOUT_DIR"
         git checkout "$(params.revision)"
@@ -53,7 +61,6 @@ spec:
         printf "%s" "$(params.url)" > "$(results.url.path)"
         echo "Cloned $(params.url) @ $RESULT_SHA"
 ---
-# tekton/tasks/run-tests.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -63,29 +70,29 @@ spec:
   params:
     - name: app-dir
       type: string
-      description: "backend or frontend"
+      description: backend or frontend
   workspaces:
     - name: source
   steps:
-    - name: install-deps
+    - name: validate
       image: node:20-alpine
       workingDir: $(workspaces.source.path)/$(params.app-dir)
       script: |
         #!/bin/sh
         set -eu
         echo "=== Installing dependencies for $(params.app-dir) ==="
-        npm ci --prefer-offline 2>/dev/null || npm install
-    - name: run-tests
-      image: node:20-alpine
-      workingDir: $(workspaces.source.path)/$(params.app-dir)
-      script: |
-        #!/bin/sh
-        set -eu
-        echo "=== Running tests for $(params.app-dir) ==="
-        npm test -- --passWithNoTests || true
-        echo "=== Tests completed ==="
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+        echo "=== Building $(params.app-dir) ==="
+        npm run build
+
+        if find . \( -path './node_modules' -o -path './dist' \) -prune -o \( -name '*.spec.ts' -o -name '*.test.ts' -o -name '*.spec.tsx' -o -name '*.test.tsx' \) -print -quit | grep -q .; then
+          echo "=== Running tests for $(params.app-dir) ==="
+          npm test
+        else
+          echo "=== No test files found for $(params.app-dir); build validation passed ==="
+        fi
 ---
-# tekton/tasks/buildah-build-push.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -94,19 +101,16 @@ metadata:
 spec:
   params:
     - name: image
-      description: Full image reference (registry/repo:tag)
+      description: Full image reference, registry/repo:tag
     - name: context
       description: Path to build context
       default: .
     - name: dockerfile
-      description: Path to Dockerfile
+      description: Path to Dockerfile, relative to context
       default: ./Dockerfile
     - name: build-arg
-      description: Extra build-arg (e.g. VITE_API_URL=...)
+      description: Extra build-arg, for example VITE_API_URL=https://api.example.com
       default: ""
-    - name: insecure-registry
-      description: Allow insecure registry
-      default: "true"
     - name: tls-verify
       description: Verify TLS for registry
       default: "false"
@@ -129,7 +133,6 @@ spec:
         #!/bin/bash
         set -euo pipefail
 
-        # Configure Harbor credentials if dockerconfig workspace provided
         if [ -f "$(workspaces.dockerconfig.path)/.dockerconfigjson" ]; then
           export REGISTRY_AUTH_FILE="$(workspaces.dockerconfig.path)/.dockerconfigjson"
         fi
@@ -139,17 +142,16 @@ spec:
         BUILD_ARG="$(params.build-arg)"
         TLS_VERIFY="$(params.tls-verify)"
 
-        echo "=== Building image: $IMAGE ==="
-
-        BUILD_ARGS=""
+        BUILD_ARGS=()
         if [ -n "$BUILD_ARG" ]; then
-          BUILD_ARGS="--build-arg $BUILD_ARG"
+          BUILD_ARGS+=(--build-arg "$BUILD_ARG")
         fi
 
+        echo "=== Building image: $IMAGE ==="
         buildah bud \
           --storage-driver=vfs \
           --format=docker \
-          $BUILD_ARGS \
+          "${BUILD_ARGS[@]}" \
           -f "$DOCKERFILE" \
           -t "$IMAGE" \
           .
@@ -160,10 +162,7 @@ spec:
           --tls-verify="$TLS_VERIFY" \
           "$IMAGE" \
           "docker://$IMAGE"
-
-        echo "=== Done: $IMAGE ==="
 ---
-# tekton/tasks/update-gitops.yaml
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -172,7 +171,7 @@ metadata:
 spec:
   params:
     - name: git-url
-      description: GitOps repo URL
+      description: "GitOps repo URL. Recommended format: ssh://git@gitlab.itssolutions.it:2424/<group>/<repo>.git"
     - name: git-branch
       description: Target branch
       default: main
@@ -182,6 +181,12 @@ spec:
       description: Frontend image with tag
     - name: commit-sha
       description: Source commit SHA
+    - name: git-ssh-host
+      type: string
+      default: gitlab.itssolutions.it
+    - name: git-ssh-port
+      type: string
+      default: "2424"
   workspaces:
     - name: ssh-directory
   steps:
@@ -191,28 +196,32 @@ spec:
         - name: HOME
           value: /tekton/home
         - name: GIT_AUTHOR_NAME
-          value: "Tekton CI"
+          value: Tekton CI
         - name: GIT_AUTHOR_EMAIL
-          value: "tekton@itssolutions.it"
+          value: tekton@itssolutions.it
         - name: GIT_COMMITTER_NAME
-          value: "Tekton CI"
+          value: Tekton CI
         - name: GIT_COMMITTER_EMAIL
-          value: "tekton@itssolutions.it"
+          value: tekton@itssolutions.it
       script: |
         #!/bin/sh
         set -eu
 
-        # SSH setup
         mkdir -p ~/.ssh
         cp "$(workspaces.ssh-directory.path)"/ssh-privatekey ~/.ssh/id_ed25519
         chmod 0600 ~/.ssh/id_ed25519
-        cat >> ~/.ssh/config <<EOF
+        cat > ~/.ssh/config <<EOF
+        Host $(params.git-ssh-host)
+          Port $(params.git-ssh-port)
+          StrictHostKeyChecking no
+          IdentityFile ~/.ssh/id_ed25519
         Host *
           StrictHostKeyChecking no
+          IdentityFile ~/.ssh/id_ed25519
         EOF
 
-        # Clone GitOps repo
         cd /tmp
+        rm -rf gitops-repo
         git clone "$(params.git-url)" gitops-repo
         cd gitops-repo
         git checkout "$(params.git-branch)"
@@ -220,25 +229,26 @@ spec:
         BACKEND_IMAGE="$(params.backend-image)"
         FRONTEND_IMAGE="$(params.frontend-image)"
         COMMIT_SHA="$(params.commit-sha)"
+        SHORT_SHA="$(printf "%s" "$COMMIT_SHA" | cut -c1-8)"
+        BACKEND_TAG="${BACKEND_IMAGE##*:}"
+        FRONTEND_TAG="${FRONTEND_IMAGE##*:}"
+        KUSTOMIZATION="gitops/kustomize/overlays/prod/kustomization.yaml"
 
-        echo "=== Updating image tags to SHA: ${COMMIT_SHA:0:8} ==="
-
-        # Update backend image tag in kustomize overlay
-        sed -i "s|image: 10.0.0.2:8083/ecommerce/backend:.*|image: $BACKEND_IMAGE|g" \
-          gitops/kustomize/overlays/prod/kustomization.yaml
-
-        # Update frontend image tag
-        sed -i "s|image: 10.0.0.2:8083/ecommerce/frontend:.*|image: $FRONTEND_IMAGE|g" \
-          gitops/kustomize/overlays/prod/kustomization.yaml
+        echo "=== Updating Kustomize image tags to SHA: $SHORT_SHA ==="
+        awk -v backend_tag="$BACKEND_TAG" -v frontend_tag="$FRONTEND_TAG" '
+          $0 ~ /name: 10\.0\.0\.2:8083\/ecommerce\/backend/ { print; getline; sub(/newTag: .*/, "newTag: " backend_tag); print; next }
+          $0 ~ /name: 10\.0\.0\.2:8083\/ecommerce\/frontend/ { print; getline; sub(/newTag: .*/, "newTag: " frontend_tag); print; next }
+          { print }
+        ' "$KUSTOMIZATION" > "$KUSTOMIZATION.tmp"
+        mv "$KUSTOMIZATION.tmp" "$KUSTOMIZATION"
 
         git add -A
-        git diff --staged --quiet && echo "No changes" && exit 0
+        git diff --staged --quiet && echo "No GitOps changes" && exit 0
 
-        git commit -m "ci: update images to ${COMMIT_SHA:0:8}
+        git commit -m "ci: update images to $SHORT_SHA
 
         Backend:  $BACKEND_IMAGE
         Frontend: $FRONTEND_IMAGE
         Triggered by commit: $COMMIT_SHA"
-
         git push origin "$(params.git-branch)"
         echo "=== GitOps manifests updated ==="

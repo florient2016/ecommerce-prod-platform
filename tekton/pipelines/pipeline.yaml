@@ -11,13 +11,13 @@ spec:
   params:
     - name: git-url
       type: string
-      description: Source repository URL
+      description: "Source repository URL. Use ssh://git@gitlab.itssolutions.it:2424/<group>/<repo>.git for GitLab SSH."
     - name: git-revision
       type: string
       default: main
     - name: gitops-url
       type: string
-      description: GitOps repository URL
+      description: "GitOps repository URL. Use ssh://git@gitlab.itssolutions.it:2424/<group>/<repo>.git."
     - name: harbor-host
       type: string
       default: 10.0.0.2:8083
@@ -51,6 +51,10 @@ spec:
           value: $(params.git-url)
         - name: revision
           value: $(params.git-revision)
+        - name: git-ssh-host
+          value: gitlab.itssolutions.it
+        - name: git-ssh-port
+          value: "2424"
       workspaces:
         - name: output
           workspace: shared-workspace
@@ -70,11 +74,12 @@ spec:
           - name: short-sha
         steps:
           - name: set-tags
-            image: alpine
+            image: alpine:3.20
             script: |
               #!/bin/sh
+              set -eu
               SHA="$(params.commit-sha)"
-              SHORT="${SHA:0:8}"
+              SHORT="$(printf "%s" "$SHA" | cut -c1-8)"
               HARBOR="$(params.harbor-host)"
               PREFIX="$(params.image-prefix)"
               echo -n "${HARBOR}/${PREFIX}/backend:${SHORT}" | tee $(results.backend-image.path)
@@ -83,6 +88,10 @@ spec:
       params:
         - name: commit-sha
           value: $(tasks.clone-source.results.commit)
+        - name: git-ssh-host
+          value: gitlab.itssolutions.it
+        - name: git-ssh-port
+          value: "2424"
         - name: harbor-host
           value: $(params.harbor-host)
         - name: image-prefix
@@ -170,6 +179,10 @@ spec:
           value: $(tasks.set-image-tags.results.frontend-image)
         - name: commit-sha
           value: $(tasks.clone-source.results.commit)
+        - name: git-ssh-host
+          value: gitlab.itssolutions.it
+        - name: git-ssh-port
+          value: "2424"
       workspaces:
         - name: ssh-directory
           workspace: ssh-workspace

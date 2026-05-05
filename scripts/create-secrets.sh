@@ -110,16 +110,16 @@ oc create secret docker-registry harbor-push-secret \
 ok "harbor-push-secret dans cicd"
 
 # =============================================================================
-# SECRETS GIT SSH (GitLab 10.0.0.2:8929)
+# SECRETS GIT SSH (GitLab gitlab.itssolutions.it:2424)
 # =============================================================================
-step "Secret Git SSH (GitLab on-premise 10.0.0.2:8929)..."
+step "Secret Git SSH (GitLab on-premise gitlab.itssolutions.it:2424)..."
 
 if [ ! -f /tmp/tekton-git ]; then
   ssh-keygen -t ed25519 -C "tekton@itssolutions.it" -f /tmp/tekton-git -N "" -q
   echo ""
   echo "  ┌──────────────────────────────────────────────────────────────┐"
   echo "  │  Clé publique à ajouter dans GitLab :                        │"
-  echo "  │  http://10.0.0.2:8929 → projet                               │"
+  echo "  │  https://gitlab.itssolutions.it → projet                               │"
   echo "  │  → Settings → Repository → Deploy Keys → Add new deploy key  │"
   echo "  │  → Cocher 'Grant write permissions to this key'              │"
   echo "  └──────────────────────────────────────────────────────────────┘"
@@ -138,7 +138,7 @@ ok "git-ssh-secret créé dans cicd"
 
 # Test connexion GitLab
 echo "    Test connexion GitLab..."
-SSH_TEST=$(ssh -T git@10.0.0.2 -p 8929 -i /tmp/tekton-git \
+SSH_TEST=$(ssh -T git@gitlab.itssolutions.it -p 2424 -i /tmp/tekton-git \
   -o StrictHostKeyChecking=no \
   -o ConnectTimeout=5 2>&1 || true)
 if echo "$SSH_TEST" | grep -qi "welcome\|authenticated"; then
@@ -163,7 +163,7 @@ ok "webhook-secret créé dans cicd"
 echo ""
 echo "  ┌──────────────────────────────────────────────────────────────┐"
 echo "  │  Configurer le webhook dans GitLab :                         │"
-echo "  │  http://10.0.0.2:8929 → projet                               │"
+echo "  │  https://gitlab.itssolutions.it → projet                               │"
 echo "  │  → Settings → Webhooks → Add new webhook                     │"
 printf "  │    URL    : https://webhook.itssolutions.it%-18s│\n" ""
 printf "  │    Secret : %-49s│\n" "${WEBHOOK_SECRET}"

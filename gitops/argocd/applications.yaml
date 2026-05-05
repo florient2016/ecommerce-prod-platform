@@ -45,7 +45,7 @@ metadata:
 spec:
   project: ecommerce
   source:
-    repoURL: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+    repoURL: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
     targetRevision: main
     path: gitops/kustomize/overlays/prod
   destination:
@@ -85,7 +85,7 @@ metadata:
 spec:
   project: ecommerce
   source:
-    repoURL: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+    repoURL: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
     targetRevision: develop
     path: gitops/kustomize/overlays/dev
   destination:

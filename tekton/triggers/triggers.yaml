@@ -8,7 +8,7 @@ metadata:
 spec:
   params:
     - name: git-url
-      value: $(body.project.http_url)
+      value: $(body.project.git_ssh_url)
     - name: git-revision
       value: $(body.checkout_sha)
     - name: git-branch
@@ -23,7 +23,7 @@ metadata:
 spec:
   params:
     - name: git-url
-      default: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+      default: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
     - name: git-revision
       default: main
     - name: git-branch
@@ -47,9 +47,9 @@ spec:
           - name: git-revision
             value: $(tt.params.git-revision)
           - name: gitops-url
-            # URL SSH de ton GitLab on-premise
-            # Format : ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
-            value: ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+            # URL SSH de ton GitLab on-premise, port SSH obligatoire 2424
+            # Format : ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
+            value: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
           - name: harbor-host
             value: 10.0.0.2:8083
           - name: image-prefix
@@ -81,7 +81,7 @@ metadata:
 spec:
   serviceAccountName: tekton-triggers-sa
   triggers:
-    # GitLab on-premise 10.0.0.2:8929 — Push sur main
+    # GitLab on-premise gitlab.itssolutions.it:2424 — Push sur main
     - name: gitlab-push-main
       interceptors:
         # Valider le token secret du webhook GitLab

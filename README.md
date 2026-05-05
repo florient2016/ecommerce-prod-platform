@@ -224,11 +224,11 @@ spec:
     name: ecommerce-pipeline
   params:
     - name: git-url
-      value: http://10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+      value: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
     - name: git-revision
       value: main
     - name: gitops-url
-      value: ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git
+      value: ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git
   workspaces:
     - name: shared-workspace
       volumeClaimTemplate:

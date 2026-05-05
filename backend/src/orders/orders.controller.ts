@@ -1,5 +1,16 @@
-// src/orders/orders.controller.ts
-import { Controller, Get, Post, Body, Param, Patch, UseGuards, Request, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  UseGuards,
+  Request,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -23,10 +34,6 @@ export class OrdersController {
     return this.ordersService.getMyOrders(req.user.id);
   }
 }
-
-// src/orders/admin-orders.controller.ts (ADMIN routes)
-import { Controller, Get, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('admin')
 @ApiBearerAuth()

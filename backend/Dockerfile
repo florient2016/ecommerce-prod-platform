@@ -5,7 +5,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm ci --only=production && \
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi && \
     npm install -g prisma && \
     npx prisma generate
 
@@ -15,7 +15,7 @@ RUN npm ci --only=production && \
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY . .
 RUN npm run build
 

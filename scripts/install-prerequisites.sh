@@ -46,12 +46,62 @@ spec:
   sourceNamespace: openshift-marketplace
 EOF
 
-echo "    ⏳ Attente déploiement Tekton (max 5 min)..."
-sleep 30
-oc wait --for=condition=available deployment/tekton-pipelines-controller \
-  -n tekton-pipelines --timeout=300s 2>/dev/null && \
-  ok "Tekton Pipelines opérationnel" || \
-  warn "Tekton Pipelines en cours d'installation — continuer"
+echo "    ⏳ Attente démarrage complet de Tekton (max 10 min)..."
+echo "    (controller + webhook + triggers)"
+
+wait_tekton_ready() {
+  local TIMEOUT=600
+  local ELAPSED=0
+  local INTERVAL=15
+  while [ $ELAPSED -lt $TIMEOUT ]; do
+    CSV_STATUS=$(oc get csv -n openshift-operators --no-headers 2>/dev/null | \
+      grep "openshift-pipelines-operator" | awk '{print $NF}' | head -1)
+    WEBHOOK_EP=$(oc get endpoints tekton-pipelines-webhook \
+      -n tekton-pipelines \
+      -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || echo "")
+    printf "    [%3ds] CSV: %-12s  webhook endpoint: %s\n" \
+      "$ELAPSED" "${CSV_STATUS:-en attente}" "${WEBHOOK_EP:-non disponible}"
+    if [ "$CSV_STATUS" = "Succeeded" ] && [ -n "$WEBHOOK_EP" ]; then
+      return 0
+    fi
+    sleep $INTERVAL
+    ELAPSED=$((ELAPSED + INTERVAL))
+  done
+  return 1
+}
+
+if wait_tekton_ready; then
+  ok "Tekton CSV           : Succeeded"
+  ok "Tekton webhook       : endpoint disponible"
+  oc wait --for=condition=available \
+    deployment/tekton-pipelines-controller \
+    deployment/tekton-pipelines-webhook \
+    -n tekton-pipelines --timeout=120s 2>/dev/null && \
+    ok "Tekton controller    : Available" || \
+    warn "Tekton controller pas encore Available — continuer"
+  oc wait --for=condition=available \
+    deployment/tekton-triggers-controller \
+    deployment/tekton-triggers-webhook \
+    -n tekton-pipelines --timeout=120s 2>/dev/null && \
+    ok "Tekton triggers      : Available" || \
+    warn "Tekton triggers pas encore Available — continuer"
+  ok "Tekton Pipelines complètement opérationnel"
+else
+  echo ""
+  echo "    ERREUR : Tekton n'est pas prêt après 10 min."
+  echo "    Diagnostic :"
+  echo "      oc get csv -n openshift-operators | grep pipelines"
+  echo "      oc get pods -n tekton-pipelines"
+  echo "      oc get endpoints tekton-pipelines-webhook -n tekton-pipelines"
+  echo ""
+  echo "    Relancer manuellement après que Tekton soit prêt :"
+  echo "      oc apply -f tekton/serviceaccount.yaml -n cicd"
+  echo "      oc apply -f tekton/rbac.yaml"
+  echo "      oc apply -f tekton/tasks/tasks.yaml -n cicd"
+  echo "      oc apply -f tekton/pipelines/pipeline.yaml -n cicd"
+  echo "      oc apply -f tekton/triggers/triggers.yaml -n cicd"
+  exit 1
+fi
 
 # ─── 3. ARGO CD ──────────────────────────────────────────────────────────────
 step "[3/10] Installation OpenShift GitOps (Argo CD)..."
@@ -163,7 +213,7 @@ echo "╠═══════════════════════�
 echo "║  Étape suivante : lancer le déploiement complet              ║"
 echo "║                                                              ║"
 echo "║  export HARBOR_PASSWORD='...'                                ║"
-echo "║  export GITOPS_REPO='ssh://git@10.0.0.2:8929/YOUR_GROUP/ecommerce-production-platform.git'            ║"
+echo "║  export GITOPS_REPO='ssh://git@gitlab.itssolutions.it:2424/YOUR_GROUP/ecommerce-production-platform.git'            ║"
 echo "║  ./scripts/deploy-production.sh                              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
